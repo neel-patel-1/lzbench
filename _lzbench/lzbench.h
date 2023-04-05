@@ -97,7 +97,7 @@ typedef struct
     timetype_e timetype;
     textformat_e textformat;
     size_t chunk_size;
-    uint32_t c_iters, d_iters, cspeed, verbose, cmintime, dmintime, cloop_time, dloop_time;
+    uint32_t c_iters, d_iters, cspeed, verbose, cmintime, dmintime, cloop_time, dloop_time, page_promotion_rate;
     size_t mem_limit;
     int random_read;
     std::vector<string_table_t> results;

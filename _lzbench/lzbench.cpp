@@ -533,6 +533,26 @@ next_k:
     }
 }
 
+int lzbench_page_workload(lzbench_params_t* params, const char** inFileNames, unsigned ifnIdx, char* encoder_list)
+{
+	size_t totalsize;
+	uint8_t *inbuf;
+    totalsize = UTIL_getTotalFileSize(inFileNames, ifnIdx);
+    if (totalsize == 0) {
+        printf("Could not find input files\n");
+        return 1;
+    }
+	LZBENCH_PRINT( 5, "total_dataset_size:%ld\n", totalsize );
+
+    inbuf = (uint8_t*)alloc_and_touch(totalsize + PAD_SIZE, false);
+	if (!inbuf)
+	{
+        printf("Not enough memory, please use -m option!\n");
+        return 1;
+	}
+	return 0;
+}
+
 
 int lzbench_join(lzbench_params_t* params, const char** inFileNames, unsigned ifnIdx, char* encoder_list)
 {
@@ -736,6 +756,7 @@ void usage(lzbench_params_t* params)
     fprintf(stderr, " -e#   #=compressors separated by '/' with parameters specified after ',' (deflt=fast)\n");
     fprintf(stderr, " -iX,Y set min. number of compression and decompression iterations (default = %d, %d)\n", params->c_iters, params->d_iters);
     fprintf(stderr, " -j    join files in memory but compress them independently (for many small files)\n");
+    fprintf(stderr, " -w    join files in memory and perform a page compression/decompression workload with the selected page promotion rate\n");
     fprintf(stderr, " -l    list of available compressors and aliases\n");
     fprintf(stderr, " -R    read block/chunk size from random blocks (to estimate for large files)\n");
     fprintf(stderr, " -m#   set memory limit to # MB (default = no limit)\n");
@@ -795,7 +816,7 @@ int main( int argc, char** argv)
     lzbench_params_t* params = &lzparams;
     const char** inFileNames = (const char**) calloc(argc, sizeof(char*));
     unsigned ifnIdx = 0;
-    bool join = false;
+    bool join = false, page_workload = false;
     char* cpu_brand;
 #ifdef UTIL_HAS_CREATEFILELIST
     const char** extendedFileList = NULL;
@@ -895,6 +916,10 @@ int main( int argc, char** argv)
         case 'v':
             params->verbose = number;
             break;
+        case 'w':
+            params->page_promotion_rate = number;
+			page_workload = true;
+            break;
         case 'x':
             real_time = 0;
             break;
@@ -969,6 +994,8 @@ int main( int argc, char** argv)
     /* Main function */
     if (join)
         result = lzbench_join(params, inFileNames, ifnIdx, encoder_list);
+	else if(page_workload)
+		result = lzbench_page_workload(params, inFileNames, ifnIdx, encoder_list);
     else
         result = lzbench_main(params, inFileNames, ifnIdx, encoder_list);
 
