@@ -495,6 +495,7 @@ void lzbench_test_with_params(lzbench_params_t *params, std::vector<size_t> &fil
         {
             if (istrcmp(cnames[k].c_str(), alias_desc[i].name)==0)
             {
+                //TODO: what is rate?
                 lzbench_test_with_params(params, file_sizes, alias_desc[i].params, inbuf, insize, compbuf, comprsize, decomp, rate);
                 goto next_k;
             }
@@ -533,22 +534,48 @@ next_k:
     }
 }
 
-void *page_wrkr(void *targs)
+void page_worker(lzbench_params_t* params, const compressor_desc_t* desc, int level, uint8_t *inbuf, size_t insize, uint8_t *compbuf, size_t comprsize, uint8_t *decomp)
 {
-	lzbench_params_t *parms = (lzbench_params_t *)targs;
-	uint32_t delay_us=*(uint32_t*)parms;
-
+    uint32_t delay_us;
 	do{
 		// compress page
+        //complen = lzbench_compress(params, chunk_sizes, desc->compress, compr_sizes, inbuf, compbuf, comprsize, param1, param2, workmem);
 		uni_sleep(delay_us);
 	} while (1);
 	
 }
 
+void page_workload_with_params(lzbench_params_t* params, const char *cname, uint8_t *inbuf, size_t insize, uint8_t *compbuf, size_t comprsize, uint8_t *decomp){
+    std::vector<std::string> cnames, cparams;
+    if (!cname) return;
+    cnames = split(cname, '/');
+    if(cnames.size() > 1){
+        printf("Only a Single Algorithm Supported at a time for Page Workloads!\n");
+        exit(-1);
+    } 
+    cparams = split(cnames[0].c_str(), ',');
+    if (cparams.size() > 2){
+        printf("Only a Single Compression Level Supported at a time for Page Workloads!\n");
+        exit(-1);
+    }
+    bool found = false;
+    for (int i=1; i<LZBENCH_COMPRESSOR_COUNT; i++)
+    {
+        if (istrcmp(comp_desc[i].name, cparams[0].c_str()) == 0)
+        {
+            found = true;
+            page_worker(params, &comp_desc[i], atoi(cparams[1].c_str()), inbuf, insize, compbuf, comprsize, decomp);
+            break;
+        }
+    }
+    
+    return;
+}
+
 int lzbench_page_workload(lzbench_params_t* params, const char** inFileNames, unsigned ifnIdx, char* encoder_list)
 {
 	size_t totalsize, inpos, insize, comprsize;
-	uint8_t *inbuf, *compbuf;
+	uint8_t *inbuf, *compbuf, *decomp;
     std::string text;
     FILE* in;
 
@@ -561,6 +588,7 @@ int lzbench_page_workload(lzbench_params_t* params, const char** inFileNames, un
 
     inbuf = (uint8_t*)alloc_and_touch(totalsize + PAD_SIZE, false);
     compbuf = (uint8_t*)alloc_and_touch(comprsize, false);
+    decomp = (uint8_t*)alloc_and_touch(totalsize + PAD_SIZE, false);
 	if (!inbuf)
 	{
         printf("Not enough memory, please use -m option!\n");
@@ -598,7 +626,8 @@ int lzbench_page_workload(lzbench_params_t* params, const char** inFileNames, un
 
     LZBENCH_PRINT(5, "totalsize=%d comprsize=%d inpos=%d\n", (int)totalsize, (int)comprsize, (int)inpos);
     totalsize = inpos;
-
+    //todo{check encoder list -- set to zstd default}
+    page_workload_with_params(params, encoder_list?encoder_list:alias_desc[0].params, inbuf, insize, compbuf, comprsize, decomp);
 _clean:
     free(inbuf);
     free(compbuf);
