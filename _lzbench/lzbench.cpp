@@ -535,8 +535,11 @@ next_k:
 
 int lzbench_page_workload(lzbench_params_t* params, const char** inFileNames, unsigned ifnIdx, char* encoder_list)
 {
-	size_t totalsize;
-	uint8_t *inbuf;
+	size_t totalsize, inpos, insize, comprsize;
+	uint8_t *inbuf, *compbuf;
+    std::string text;
+    FILE* in;
+
     totalsize = UTIL_getTotalFileSize(inFileNames, ifnIdx);
     if (totalsize == 0) {
         printf("Could not find input files\n");
@@ -545,11 +548,49 @@ int lzbench_page_workload(lzbench_params_t* params, const char** inFileNames, un
 	LZBENCH_PRINT( 5, "total_dataset_size:%ld\n", totalsize );
 
     inbuf = (uint8_t*)alloc_and_touch(totalsize + PAD_SIZE, false);
+    compbuf = (uint8_t*)alloc_and_touch(comprsize, false);
 	if (!inbuf)
 	{
         printf("Not enough memory, please use -m option!\n");
         return 1;
 	}
+    inpos = 0;
+
+    for (int i=0; i<ifnIdx; i++)
+    {
+        if (UTIL_isDirectory(inFileNames[i])) {
+            fprintf(stderr, "warning: use -r to process directories (%s)\n", inFileNames[i]);
+            continue;
+        } 
+
+        if (!(in=fopen(inFileNames[i], "rb"))) {
+            perror(inFileNames[i]);
+            continue;
+        } 
+
+        fseeko(in, 0L, SEEK_END);
+        insize = ftello(in);
+        rewind(in);
+
+        if (inpos + insize > totalsize) { printf("inpos + insize > totalsize\n"); goto _clean; };
+        insize = fread(inbuf+inpos, 1, insize, in);
+        inpos += insize;
+        fclose(in);
+    }
+
+    if (ifnIdx == 0) 
+        goto _clean;
+
+    format(text, "%d page-set", totalsize/4096);
+    params->in_filename = text.c_str();
+
+    LZBENCH_PRINT(5, "totalsize=%d comprsize=%d inpos=%d\n", (int)totalsize, (int)comprsize, (int)inpos);
+    totalsize = inpos;
+
+_clean:
+    free(inbuf);
+    free(compbuf);
+
 	return 0;
 }
 
