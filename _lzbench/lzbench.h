@@ -104,6 +104,13 @@ typedef struct
     const char* in_filename;
 } lzbench_params_t;
 
+typedef struct
+{
+	uint32_t op_delay;
+	uint8_t *data;
+	size_t data_len;
+} page_wrkr_params_t;
+
 struct less_using_1st_column { inline bool operator() (const string_table_t& struct1, const string_table_t& struct2) {  return (struct1.col1_algname < struct2.col1_algname); } };
 struct less_using_2nd_column { inline bool operator() (const string_table_t& struct1, const string_table_t& struct2) {  return (struct1.col2_ctime > struct2.col2_ctime); } };
 struct less_using_3rd_column { inline bool operator() (const string_table_t& struct1, const string_table_t& struct2) {  return (struct1.col3_dtime > struct2.col3_dtime); } };

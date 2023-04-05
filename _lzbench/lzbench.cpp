@@ -533,6 +533,18 @@ next_k:
     }
 }
 
+void *page_wrkr(void *targs)
+{
+	lzbench_params_t *parms = (lzbench_params_t *)targs;
+	uint32_t delay_us=*(uint32_t*)parms;
+
+	do{
+		// compress page
+		uni_sleep(delay_us);
+	} while (1);
+	
+}
+
 int lzbench_page_workload(lzbench_params_t* params, const char** inFileNames, unsigned ifnIdx, char* encoder_list)
 {
 	size_t totalsize, inpos, insize, comprsize;
