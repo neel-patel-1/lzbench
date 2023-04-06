@@ -348,6 +348,7 @@ void lzbench_test(lzbench_params_t *params, std::vector<size_t> &file_sizes, con
     if (desc->max_block_size != 0 && chunk_size > desc->max_block_size) chunk_size = desc->max_block_size;
     if (!desc->compress || !desc->decompress) goto done;
     if (desc->init) workmem = desc->init(chunk_size, param1, param2);
+    //TODO: workmem?
 
     if (params->cspeed > 0)
     {
@@ -537,35 +538,45 @@ next_k:
 void page_worker(lzbench_params_t* params, const compressor_desc_t* desc, int level, uint8_t *inbuf, size_t insize, uint8_t *compbuf, size_t comprsize, uint8_t *decomp)
 {
     uint32_t prom_rate = params->page_promotion_rate;
+    uint64_t compressions = 0;
     if(prom_rate == 0){
         do{
-            // compress page
-            //complen = lzbench_compress(params, chunk_sizes, desc->compress, compr_sizes, inbuf, compbuf, comprsize, param1, param2, workmem);
-            uni_sleep(delay_us);
+            usleep(5000);
         } while (1);
     }
     else{
         uint32_t delay_us = (60 * 1000000) / prom_rate;
         LZBENCH_PRINT( 5, "Page Worker algorithm:%s level:%d page_prom_rate(pages/min):%d page_compression_delay:%dus page_decompression_delay:%d \n", 
         desc->name, level, params->page_promotion_rate, delay_us, delay_us );
+        size_t chunk_size = MIN_PAGE_SIZE;
+        if (desc->max_block_size != 0 && chunk_size > desc->max_block_size){
+            chunk_size = desc->max_block_size;
+            delay_us /= (MIN_PAGE_SIZE/chunk_size);
+        } 
+        char* workmem = NULL;
+        size_t param1=level, param2 = desc->additional_param;
+        if (desc->init) workmem = desc->init(chunk_size, param1, param2);
+
+        size_t complen;
+        std::vector<size_t> chunk_sizes(1), compr_sizes(1);
+        chunk_sizes[0] = MIN_PAGE_SIZE;
+        if (!desc->compress || !desc->decompress) 
+            goto done;
+
         do{
             // compress page
-            //complen = lzbench_compress(params, chunk_sizes, desc->compress, compr_sizes, inbuf, compbuf, comprsize, param1, param2, workmem);
-            uni_sleep(delay_us);
-        } while (1);
+            complen = lzbench_compress(params, chunk_sizes, desc->compress, compr_sizes, inbuf, compbuf, comprsize, param1, param2, workmem);
+            inbuf = (inbuf + chunk_size % insize);
+            usleep(delay_us);
+            compressions++;
+        } while (compressions < (prom_rate/6));
+
+done:
+        if (desc->deinit) 
+            desc->deinit(workmem);
     }
 
     
-    uint32_t delay_us = (60 * 1000000) / prom_rate;
-
-    LZBENCH_PRINT( 5, "Page Worker algorithm:%s level:%d page_prom_rate(pages/min):%d page_compression_delay:%dus page_decompression_delay:%d \n", 
-        desc->name, level, params->page_promotion_rate, delay_us, delay_us );
-	do{
-		// compress page
-        //complen = lzbench_compress(params, chunk_sizes, desc->compress, compr_sizes, inbuf, compbuf, comprsize, param1, param2, workmem);
-		uni_sleep(delay_us);
-	} while (1);
-	
 }
 
 void page_workload_with_params(lzbench_params_t* params, const char *cname, uint8_t *inbuf, size_t insize, uint8_t *compbuf, size_t comprsize, uint8_t *decomp){
