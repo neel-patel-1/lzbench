@@ -545,9 +545,21 @@ void page_worker(lzbench_params_t* params, const compressor_desc_t* desc, int le
         } while (1);
     }
     else{
-        uint32_t delay_us = (60 * 1000000) / prom_rate;
-        LZBENCH_PRINT( 5, "Page Worker algorithm:%s level:%d page_prom_rate(pages/min):%d page_compression_delay:%dus page_decompression_delay:%d \n", 
-        desc->name, level, params->page_promotion_rate, delay_us, delay_us );
+        std::default_random_engine generator;
+        std::uniform_real_distribution<double> uncomp_distrib(0.0,(double)insize - 4096);
+        int offset = static_cast<int>(uncomp_distrib(generator)); /* standard uniform random index into uncompressed region*/
+
+        /* generate compressed buffers of all input data for standard random decompressions */
+
+        // std::uniform_real_distribution<double> comp_distrib(0.0,(double)compbufsize - 4096);
+        // int offset = static_cast<int>(uncomp_distrib(generator)); /* standard uniform random index into uncompressed region*/
+
+        uint32_t delay_us = (60000); /* usleep < 60 milliseconds is sometimes inaccurate */
+        uint32_t cbatch = prom_rate / ((60 * 1000000) / (delay_us)); /* burst of page compressions */
+
+        LZBENCH_PRINT( 5, "Page Worker algorithm:%s level:%d page_prom_rate(pages/min):%d page_compression_delay:%dus total_wss:%ld \n", 
+            desc->name, level, params->page_promotion_rate, delay_us, insize );
+        
         size_t chunk_size = MIN_PAGE_SIZE;
         if (desc->max_block_size != 0 && chunk_size > desc->max_block_size){
             chunk_size = desc->max_block_size;
@@ -556,7 +568,6 @@ void page_worker(lzbench_params_t* params, const compressor_desc_t* desc, int le
         char* workmem = NULL;
         size_t param1=level, param2 = desc->additional_param;
         if (desc->init) workmem = desc->init(chunk_size, param1, param2);
-
         size_t complen;
         std::vector<size_t> chunk_sizes(1), compr_sizes(1);
         chunk_sizes[0] = MIN_PAGE_SIZE;
@@ -564,12 +575,21 @@ void page_worker(lzbench_params_t* params, const compressor_desc_t* desc, int le
             goto done;
 
         do{
-            // compress page
-            complen = lzbench_compress(params, chunk_sizes, desc->compress, compr_sizes, inbuf, compbuf, comprsize, param1, param2, workmem);
-            inbuf = (inbuf + chunk_size % insize);
+            compressions = 0;
+            
+            do{
+                offset = static_cast<int>(uncomp_distrib(generator));
+                inbuf = (inbuf + offset);
+                lzbench_compress(params, chunk_sizes, desc->compress, compr_sizes, inbuf, compbuf, comprsize, param1, param2, workmem);
+                /* compress random page in range (inbuf, (inbuf + chunksize)) */
+                compressions++;
+
+                // offset = uncomp_distrib(generator);
+                /* decompress random page in compressed region */
+                // lzbench_decompress(params, chunk_sizes, desc->decompress, compr_sizes, compbuf, decomp, param1, param2, workmem);
+            } while (compressions < cbatch); /* do a batch of page compressions*/
             usleep(delay_us);
-            compressions++;
-        } while (compressions < (prom_rate/6));
+        } while (compressions < prom_rate/6);
 
 done:
         if (desc->deinit) 

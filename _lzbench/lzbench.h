@@ -6,6 +6,7 @@
 
 #include <vector>
 #include <string>
+#include <random>
 #include "compressors.h"
 #include "lizard/lizard_compress.h"    // LIZARD_MAX_CLEVEL
 
