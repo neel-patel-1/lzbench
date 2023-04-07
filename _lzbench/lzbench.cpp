@@ -538,29 +538,20 @@ next_k:
 void page_worker(lzbench_params_t* params, const compressor_desc_t* desc, int level, uint8_t *inbuf, size_t insize, uint8_t *compbuf, size_t comprsize, uint8_t *decomp)
 {
     uint32_t prom_rate = params->page_promotion_rate;
-    uint64_t compressions = 0;
+    std::vector<size_t> chunk_sizes(1), compr_sizes(1);
+    chunk_sizes[0] = MIN_PAGE_SIZE;
+
     if(prom_rate == 0){
+        LZBENCH_PRINT( 5, "Page Worker performing no page promotions: page_prom_rate:%d \n", prom_rate);
         do{
             usleep(5000);
         } while (1);
     }
     else{
-        std::default_random_engine generator;
-        std::uniform_real_distribution<double> uncomp_distrib(0.0,(double)insize - 4096);
-        int offset = static_cast<int>(uncomp_distrib(generator)); /* standard uniform random index into uncompressed region*/
-
-        /* generate compressed buffers of all input data for standard random decompressions */
-
-        // std::uniform_real_distribution<double> comp_distrib(0.0,(double)compbufsize - 4096);
-        // int offset = static_cast<int>(uncomp_distrib(generator)); /* standard uniform random index into uncompressed region*/
-
         uint32_t delay_us = (60000); /* usleep < 60 milliseconds is sometimes inaccurate */
         uint32_t cbatch = prom_rate / ((60 * 1000000) / (delay_us)); /* burst of page compressions */
-
-        LZBENCH_PRINT( 5, "Page Worker algorithm:%s level:%d page_prom_rate(pages/min):%d page_compression_delay:%dus total_wss:%ld \n", 
-            desc->name, level, params->page_promotion_rate, delay_us, insize );
-        
         size_t chunk_size = MIN_PAGE_SIZE;
+
         if (desc->max_block_size != 0 && chunk_size > desc->max_block_size){
             chunk_size = desc->max_block_size;
             delay_us /= (MIN_PAGE_SIZE/chunk_size);
@@ -568,25 +559,52 @@ void page_worker(lzbench_params_t* params, const compressor_desc_t* desc, int le
         char* workmem = NULL;
         size_t param1=level, param2 = desc->additional_param;
         if (desc->init) workmem = desc->init(chunk_size, param1, param2);
-        size_t complen;
-        std::vector<size_t> chunk_sizes(1), compr_sizes(1);
-        chunk_sizes[0] = MIN_PAGE_SIZE;
-        if (!desc->compress || !desc->decompress) 
-            goto done;
+        if (!desc->compress || !desc->decompress){
+            printf("No Page Compression Algorithm Detected\n");
+            exit(1);
+        }
 
+        /* Select offset within uncompressed input buffer*/
+        std::default_random_engine generator;
+        std::uniform_real_distribution<double> uncomp_distrib(0.0,(double)insize - 4096);
+        int c_offset = static_cast<int>(uncomp_distrib(generator)); /* standard uniform random index into uncompressed region*/
+
+        /* Generate compressed buffers of all input data for later decompression */
+        std::vector<uint8_t*> cbufs;
+        int d_idx = 0;
+        int page_compr_max = GET_COMPRESS_BOUND(MIN_PAGE_SIZE);
+        for (int i=0; i<insize; i+=MIN_PAGE_SIZE)
+        {
+            cbufs.push_back((uint8_t *)malloc(page_compr_max));
+            lzbench_compress(params, chunk_sizes, desc->compress, compr_sizes, inbuf, cbufs[d_idx], page_compr_max, param1, param2, workmem);
+            d_idx++;
+        }
+        std::uniform_real_distribution<double> comp_distrib(0.0,(double)(cbufs.size()));
+        int d_offIdx = static_cast<int>(comp_distrib(generator)); /* standard uniform random index into compressed pages*/
+
+        LZBENCH_PRINT( 5, "Page Worker algorithm:%s level:%d page_prom_rate(pages/min):%d page_compression_delay:%dus total_wss:%ld \n", 
+            desc->name, level, params->page_promotion_rate, delay_us, insize );
+        
+        int compressions; 
         do{
             compressions = 0;
             
             do{
-                offset = static_cast<int>(uncomp_distrib(generator));
-                inbuf = (inbuf + offset);
-                lzbench_compress(params, chunk_sizes, desc->compress, compr_sizes, inbuf, compbuf, comprsize, param1, param2, workmem);
                 /* compress random page in range (inbuf, (inbuf + chunksize)) */
+                c_offset = static_cast<int>(uncomp_distrib(generator)); /* standard uniform random index into uncompressed region*/
+                uint8_t *u_page = inbuf + c_offset;
+                lzbench_compress(params, chunk_sizes, desc->compress, compr_sizes, u_page, compbuf+c_offset, MIN_PAGE_SIZE, param1, param2, workmem);
+                
                 compressions++;
 
-                // offset = uncomp_distrib(generator);
-                /* decompress random page in compressed region */
-                // lzbench_decompress(params, chunk_sizes, desc->decompress, compr_sizes, compbuf, decomp, param1, param2, workmem);
+                
+                d_idx = comp_distrib(generator);
+                uint8_t *c_page = cbufs[d_idx];
+                /* 
+                 * Decompress random page in compressed region into a random offset of the large decompression buffer passed in
+                 * The same offset used for indexing into the large compressed buffer works
+                 */
+                lzbench_decompress(params, chunk_sizes, desc->decompress, compr_sizes, c_page, decomp+(c_offset), param1, param2, workmem);
             } while (compressions < cbatch); /* do a batch of page compressions*/
             usleep(delay_us);
         } while (compressions < prom_rate/6);
@@ -605,12 +623,12 @@ void page_workload_with_params(lzbench_params_t* params, const char *cname, uint
     cnames = split(cname, '/');
     if(cnames.size() > 1){
         printf("Only a Single Algorithm Supported at a time for Page Workloads!\n");
-        exit(-1);
+        exit(1);
     } 
     cparams = split(cnames[0].c_str(), ',');
     if (cparams.size() > 2){
         printf("Only a Single Compression Level Supported at a time for Page Workloads!\n");
-        exit(-1);
+        exit(1);
     }
     bool found = false;
     for (int i=1; i<LZBENCH_COMPRESSOR_COUNT; i++)
@@ -640,6 +658,7 @@ int lzbench_page_workload(lzbench_params_t* params, const char** inFileNames, un
     }
 	LZBENCH_PRINT( 5, "total_dataset_size:%ld\n", totalsize );
 
+    comprsize = GET_COMPRESS_BOUND(totalsize);
     inbuf = (uint8_t*)alloc_and_touch(totalsize + PAD_SIZE, false);
     compbuf = (uint8_t*)alloc_and_touch(comprsize, false);
     decomp = (uint8_t*)alloc_and_touch(totalsize + PAD_SIZE, false);
