@@ -542,7 +542,7 @@ void page_worker(lzbench_params_t* params, const compressor_desc_t* desc, int le
     chunk_sizes[0] = MIN_PAGE_SIZE;
 
     if(prom_rate == 0){
-        LZBENCH_PRINT( 5, "Page Worker performing no page promotions: page_prom_rate:%d \n", prom_rate);
+        LZBENCH_PRINT( 4, "Page Worker performing no page promotions: page_prom_rate:%d \n", prom_rate);
         do{
             usleep(5000);
         } while (1);
@@ -582,7 +582,7 @@ void page_worker(lzbench_params_t* params, const compressor_desc_t* desc, int le
         std::uniform_real_distribution<double> comp_distrib(0.0,(double)(cbufs.size()));
         int d_offIdx = static_cast<int>(comp_distrib(generator)); /* standard uniform random index into compressed pages*/
 
-        LZBENCH_PRINT( 5, "Page Worker algorithm:%s level:%d page_prom_rate(pages/min):%d page_compression_delay:%dus total_wss:%ld \n", 
+        LZBENCH_PRINT( 4, "Page Worker algorithm:%s level:%d page_prom_rate(pages/min):%d page_compression_delay:%dus total_wss:%ld \n", 
             desc->name, level, params->page_promotion_rate, delay_us, insize );
         
         int compressions; 
@@ -656,7 +656,7 @@ int lzbench_page_workload(lzbench_params_t* params, const char** inFileNames, un
         printf("Could not find input files\n");
         return 1;
     }
-	LZBENCH_PRINT( 5, "total_dataset_size:%ld\n", totalsize );
+	LZBENCH_PRINT( 4, "total_dataset_size:%ld\n", totalsize );
 
     comprsize = GET_COMPRESS_BOUND(totalsize);
     inbuf = (uint8_t*)alloc_and_touch(totalsize + PAD_SIZE, false);
@@ -697,7 +697,7 @@ int lzbench_page_workload(lzbench_params_t* params, const char** inFileNames, un
     format(text, "%d page-set", totalsize/4096);
     params->in_filename = text.c_str();
 
-    LZBENCH_PRINT(5, "totalsize=%d comprsize=%d inpos=%d\n", (int)totalsize, (int)comprsize, (int)inpos);
+    LZBENCH_PRINT(4, "totalsize=%d comprsize=%d inpos=%d\n", (int)totalsize, (int)comprsize, (int)inpos);
     totalsize = inpos;
     //todo{check encoder list -- set to zstd default}
     page_workload_with_params(params, encoder_list?encoder_list:alias_desc[0].params, inbuf, insize, compbuf, comprsize, decomp);
@@ -1138,7 +1138,7 @@ int main( int argc, char** argv)
         extendedFileList = UTIL_createFileList(inFileNames, ifnIdx, &fileNamesBuf, &fileNamesNb);
         if (extendedFileList) {
             unsigned u;
-            for (u=0; u<fileNamesNb; u++) LZBENCH_PRINT(4, "%u %s\n", u, extendedFileList[u]);
+            for (u=0; u<fileNamesNb; u++) LZBENCH_PRINT(5, "%u %s\n", u, extendedFileList[u]);
             free((void*)inFileNames);
             inFileNames = extendedFileList;
             ifnIdx = fileNamesNb;
