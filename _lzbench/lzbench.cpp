@@ -683,7 +683,7 @@ void page_comp_monitor(int n_wrkrs, double target, lzbench_params_t* params, con
                 LOG_PRINTF("global_monitor_reclaim new_num_threads:%d/%u total_page_comps_per_min:%f", n_wrkrs, num_threads, page_comp_rate);
             }
         }
-        if( page_comp_rate < .75 * target && n_wrkrs < num_threads && cur_page_comps > 0){
+        if( page_comp_rate < 2 * target && n_wrkrs < num_threads && cur_page_comps > 0){
             {
                 std::lock_guard<std::mutex> guard(io_mutex);
                 LOG_PRINTF("global_monitor_spawn new_num_threads:%d/%u total_page_comps_per_min:%f", n_wrkrs+1, num_threads, page_comp_rate);
