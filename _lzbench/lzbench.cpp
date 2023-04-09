@@ -535,11 +535,39 @@ next_k:
     }
 }
 
-void page_worker(lzbench_params_t* params, const compressor_desc_t* desc, int level, uint8_t *inbuf, size_t insize, uint8_t *compbuf, size_t comprsize, uint8_t *decomp)
+void page_comp_monitor(){
+    /* 
+     * read page_comp var and compare with page_comps seen a min. ago
+     * insufficient page compressions for N intervals results in another
+     * page worker spawning
+     */
+
+    uint32_t last_seen;
+    uint32_t cur_page_comps = page_comps; /* TODO: check if reader lock is necessary */
+    /* handle underflow */
+    // if( unlikely(last_seen > cur_page_comps) ){
+    //     cur_page_comps = 
+    // }
+    // /* check if another thread is required */
+    // if(compressions < c_tgt){
+    //     /*spawn another page_worker*/
+    //     uint16_t n_pw_id = 
+    //     std::lock_guard<std::mutex> lock(page_comp_mutex);
+    //     std::lock_guard<std::mutex> iolock(iomutex);
+    //     LZBENCH_PRINT( 4, "Page Worker algorithm:%s level:%d page_prom_rate(pages/min):%d page_compression_delay:%dus total_wss:%ld \n");
+    //     page_worker(params, &comp_desc[i], atoi(cparams[1].c_str()), inbuf, insize, compbuf, comprsize, decomp, 0);
+    // }
+    // /* update last seen */
+    // last_seen = cur_page_comps;
+}
+
+void page_worker(lzbench_params_t* params, const compressor_desc_t* desc, int level, uint8_t *inbuf, size_t insize, uint8_t *compbuf, size_t comprsize, uint8_t *decomp, uint16_t pw_id)
 {
     uint32_t prom_rate = params->page_promotion_rate;
     std::vector<size_t> chunk_sizes(1), compr_sizes(1);
     chunk_sizes[0] = MIN_PAGE_SIZE;
+
+    std::cout << "pw_id" << pw_id << " spawned\n";
 
     if(prom_rate == 0){
         LZBENCH_PRINT( 4, "Page Worker performing no page promotions: page_prom_rate:%d \n", prom_rate);
@@ -585,7 +613,7 @@ void page_worker(lzbench_params_t* params, const compressor_desc_t* desc, int le
         LZBENCH_PRINT( 4, "Page Worker algorithm:%s level:%d page_prom_rate(pages/min):%d page_compression_delay:%dus total_wss:%ld \n", 
             desc->name, level, params->page_promotion_rate, delay_us, insize );
         
-        int compressions; 
+        int compressions;
         do{
             compressions = 0;
             
@@ -607,7 +635,9 @@ void page_worker(lzbench_params_t* params, const compressor_desc_t* desc, int le
                 lzbench_decompress(params, chunk_sizes, desc->decompress, compr_sizes, c_page, decomp+(c_offset), param1, param2, workmem);
             } while (compressions < cbatch); /* do a batch of page compressions*/
             usleep(delay_us);
-        } while (compressions < prom_rate/6);
+
+            
+        } while (1);
 
 done:
         if (desc->deinit) 
@@ -636,7 +666,12 @@ void page_workload_with_params(lzbench_params_t* params, const char *cname, uint
         if (istrcmp(comp_desc[i].name, cparams[0].c_str()) == 0)
         {
             found = true;
-            page_worker(params, &comp_desc[i], atoi(cparams[1].c_str()), inbuf, insize, compbuf, comprsize, decomp);
+
+            /*spawn initial pageworker*/
+            cpu_set_t cpuset;
+            CPU_ZERO(&cpuset);
+            CPU_SET(1, &cpuset);
+            page_worker(params, &comp_desc[i], atoi(cparams[1].c_str()), inbuf, insize, compbuf, comprsize, decomp, 1);
             break;
         }
     }

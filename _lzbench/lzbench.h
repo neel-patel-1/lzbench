@@ -10,6 +10,18 @@
 #include "compressors.h"
 #include "lizard/lizard_compress.h"    // LIZARD_MAX_CLEVEL
 
+#include <thread>
+#include <iostream>
+#include <mutex>
+#include <sched.h>
+#include <pthread.h>
+
+constexpr unsigned num_threads = 4; /* max allowed thread == length of corelist in taskset cmd */
+std::vector<std::thread> pWrkrs(num_threads);
+
+int page_comps;
+std::mutex page_comp_mutex;
+
 #define PROGNAME "lzbench"
 #define PROGVERSION "1.8"
 #define PAD_SIZE (16*1024)
