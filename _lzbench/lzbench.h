@@ -25,6 +25,8 @@ std::vector<std::thread> pWrkrs(num_threads);
 int page_comps;
 std::mutex page_comp_mutex;
 
+std::mutex io_mutex;
+
 #define PROGNAME "lzbench"
 #define PROGVERSION "1.8"
 #define PAD_SIZE (16*1024)
