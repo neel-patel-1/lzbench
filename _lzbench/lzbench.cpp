@@ -535,21 +535,31 @@ next_k:
     }
 }
 
-void page_comp_monitor(){
+void page_comp_monitor(int *page_comps){
     /* 
      * read page_comp var and compare with page_comps seen a min. ago
      * insufficient page compressions for N intervals results in another
      * page worker spawning
      */
-    uint32_t window = 600000; // us
+    uint32_t window = 6000000; // us
 
     uint32_t last_seen;
-    uint32_t cur_page_comps = page_comps; /* TODO: check if reader lock is necessary */
-    double page_comp_rate = (((double) cur_page_comps) / window) * (60000000/window);
+    uint32_t cur_page_comps;
+    
+    double page_comp_rate;
+    while(1){
+        {
+            std::lock_guard<std::mutex> guard(page_comp_mutex);
+            cur_page_comps = *page_comps; /* TODO: check if reader lock is necessary */
+        }
+        page_comp_rate = (((double) cur_page_comps) );
+        {
+            std::lock_guard<std::mutex> guard(io_mutex);
+            LOG_PRINTF("global_monitor total_pages_per_sec:%d", cur_page_comps);
+        }
+        usleep(window);
+    }
 
-    usleep(window);
-
-    LOG_PRINTF("global_monitor total_pages_per_sec:%f", page_comp_rate);
 
     /* handle underflow */
     // if( unlikely(last_seen > cur_page_comps) ){
@@ -568,7 +578,7 @@ void page_comp_monitor(){
     // last_seen = cur_page_comps;
 }
 
-void page_worker(lzbench_params_t* params, const compressor_desc_t* desc, int level, uint8_t *inbuf, size_t insize, uint8_t *compbuf, size_t comprsize, uint8_t *decomp, uint16_t pw_id)
+void page_worker(lzbench_params_t* params, const compressor_desc_t* desc, int level, uint8_t *inbuf, size_t insize, uint8_t *compbuf, size_t comprsize, uint8_t *decomp, uint16_t pw_id, int *page_comp_shared)
 {
     uint32_t prom_rate = params->page_promotion_rate;
     std::vector<size_t> chunk_sizes(1), compr_sizes(1);
@@ -639,9 +649,7 @@ void page_worker(lzbench_params_t* params, const compressor_desc_t* desc, int le
                 c_offset = static_cast<int>(uncomp_distrib(generator)); /* standard uniform random index into uncompressed region*/
                 uint8_t *u_page = inbuf + c_offset;
                 lzbench_compress(params, chunk_sizes, desc->compress, compr_sizes, u_page, compbuf+c_offset, MIN_PAGE_SIZE, param1, param2, workmem);
-                
                 comps++;
-
                 
                 /* 
                  * Decompress random page in compressed region into a random offset of the large decompression buffer passed in
@@ -651,7 +659,13 @@ void page_worker(lzbench_params_t* params, const compressor_desc_t* desc, int le
                 uint8_t *c_page = cbufs[d_idx];
                 lzbench_decompress(params, chunk_sizes, desc->decompress, compr_sizes, c_page, decomp+(c_offset), param1, param2, workmem);
                 decomps++;
+                {
+                std::lock_guard<std::mutex> pLock(page_comp_mutex);
+                *page_comp_shared+= (comps + decomps);
+            }
             } while (comps < cbatch); /* do a batch of page compressions*/
+            
+            
             usleep(delay_us);
 
             
@@ -686,12 +700,12 @@ void page_workload_with_params(lzbench_params_t* params, const char *cname, uint
             found = true;
 
             /*spawn initial pageworker*/
-
-            //page_worker(params, &comp_desc[i], atoi(cparams[1].c_str()), inbuf, insize, compbuf, comprsize, decomp, 1);
-            pWrkrs[0] = std::thread(page_worker, params, &comp_desc[i], atoi(cparams[1].c_str()), inbuf, insize, compbuf, comprsize, decomp, 1);
+            monTd = std::thread(page_comp_monitor, &page_comps);
+            pWrkrs[0] = std::thread(page_worker, params, &comp_desc[i], atoi(cparams[1].c_str()), inbuf, insize, compbuf, comprsize, decomp, 1, &page_comps);
             for (auto& t : pWrkrs) {
                 t.join();
             }
+            monTd.join();
         }
     }
     

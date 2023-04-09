@@ -17,10 +17,14 @@
 #include <pthread.h>
 
 #include <chrono>
-#include <ctime>    
+#include <ctime> 
+
+#include <atomic>
 
 constexpr unsigned num_threads = 4; /* max allowed thread == length of corelist in taskset cmd */
 std::vector<std::thread> pWrkrs(num_threads);
+
+std::thread monTd;
 
 int page_comps;
 std::mutex page_comp_mutex;
