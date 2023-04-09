@@ -24,9 +24,9 @@
 #include <limits>
 #include <stdio.h>
 
-constexpr unsigned num_threads = 4; /* max allowed thread == length of corelist in taskset cmd */
+constexpr unsigned num_threads = 3; /* max allowed thread == length of corelist in taskset - 1 cmd */
 std::vector<std::thread> pWrkrs(num_threads);
-
+unsigned n_wrkrs;
 std::thread monTd;
 
 int page_comps;
