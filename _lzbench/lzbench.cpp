@@ -567,7 +567,9 @@ void page_worker(lzbench_params_t* params, const compressor_desc_t* desc, int le
     std::vector<size_t> chunk_sizes(1), compr_sizes(1);
     chunk_sizes[0] = MIN_PAGE_SIZE;
 
-    std::cout << "pw_id" << pw_id << " spawned\n";
+    auto init_time = std::chrono::system_clock::now();
+    // std::cout << currentDateTime() << pw_id << " spawned\n";
+    LOG_PRINTF("PageWorker_Initialized Core:%d", pw_id);
 
     if(prom_rate == 0){
         LZBENCH_PRINT( 4, "Page Worker performing no page promotions: page_prom_rate:%d \n", prom_rate);

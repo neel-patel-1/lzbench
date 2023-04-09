@@ -179,7 +179,22 @@ UTIL_STATIC void UTIL_waitForNextTick(UTIL_time_t ticksPerSecond)
     } while (UTIL_getSpanTimeNano(ticksPerSecond, clockStart, clockEnd) == 0);
 }
 
+//https://stackoverflow.com/questions/997946/how-to-get-current-time-and-date-in-c
 
+UTIL_STATIC std::string currentDateTime() {
+    time_t     now = time(0);
+    struct tm  tstruct;
+    char       buf[80];
+    tstruct = *localtime(&now);
+    strftime(buf, sizeof(buf), "%X", &tstruct);
+
+    return buf;
+}
+#  define LOG_PRINTF(fmt_str, ...)\
+    do {\
+        std::cout<<"["<<currentDateTime()<<"] "; \
+        printf(fmt_str"\n",##__VA_ARGS__);\
+    } while (0)
 
 /*-****************************************
 *  File functions
