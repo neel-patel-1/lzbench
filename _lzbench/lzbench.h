@@ -26,7 +26,7 @@
 
 constexpr unsigned num_threads = 3; /* max allowed thread == length of corelist in taskset - 1 cmd */
 std::vector<std::thread> pWrkrs(num_threads);
-unsigned n_wrkrs;
+unsigned n_wrkrs = 0;
 std::thread monTd;
 
 int page_comps;

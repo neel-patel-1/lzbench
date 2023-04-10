@@ -603,9 +603,7 @@ void page_worker(lzbench_params_t* params, const compressor_desc_t* desc, int le
         std::uniform_real_distribution<double> comp_distrib(0.0,(double)(cbufs.size()));
         int d_offIdx = static_cast<int>(comp_distrib(generator)); /* standard uniform random index into compressed pages*/
 
-        LZBENCH_PRINT( 4, "Page Worker algorithm:%s level:%d page_prom_rate(pages/min):%d page_compression_delay:%dus total_wss:%ld \n", 
-            desc->name, level, params->page_promotion_rate, delay_us, insize );
-        
+               
         int comps, decomps, cur_batch;
         do{
             comps = 0;
@@ -656,6 +654,8 @@ void page_comp_monitor(double target, lzbench_params_t* params, const compressor
         std::cerr << "Error calling pthread_setaffinity_np: " << rc << "\n";
     }
     
+    LOG_PRINTF("MONITOR_INIT algorithm:%s level:%d target_page_prom_rate(pages/min):%d target_page_reads_writes:%f \n", 
+            desc->name, level, params->page_promotion_rate, target );
     /* 
      * read page_comp var and compare with page_comps seen a min. ago
      * insufficient page compressions for N intervals results in another
@@ -665,53 +665,54 @@ void page_comp_monitor(double target, lzbench_params_t* params, const compressor
     uint32_t min_us = 60000000; // 60 s
 
     uint32_t last_seen=0;
-    uint32_t cur_page_comps=0;
+    uint32_t cur_page_ops=0;
     
-    double page_comp_rate=0;
+    double page_op_rate=0;
     while(1){
         {
             std::lock_guard<std::mutex> guard(page_comp_mutex);
-            cur_page_comps = page_comps;
+            cur_page_ops = page_comps;
         }
         /* handle underflow */
-        if( unlikely(last_seen > cur_page_comps) ){
-            cur_page_comps = last_seen + (std::numeric_limits<uint32_t>::max() - cur_page_comps);
+        if( unlikely(last_seen > cur_page_ops) ){
+            cur_page_ops = last_seen + (std::numeric_limits<uint32_t>::max() - cur_page_ops);
         }
-        page_comp_rate = (((double) cur_page_comps - last_seen) )*(min_us/window);
+        page_op_rate = (((double) cur_page_ops - last_seen) )*(min_us/window);
         {
             std::lock_guard<std::mutex> guard(io_mutex);
-            LOG_PRINTF("global_monitor total_page_comps_per_min:%f cur_page_comps:%u", page_comp_rate, cur_page_comps);
+            LOG_PRINTF("MONITOR_LOG page_reads_writes_per_min:%f cur_num_tds:%u cur_page_ops:%u", page_op_rate, n_wrkrs, cur_page_ops);
         }
-        last_seen = cur_page_comps;
+        last_seen = cur_page_ops;
 
         /*
         Number of workers = 1 -> low page comp rate requires spawning additional workers
         Number of workers > 1 -> low page comp rate requires spawning additional workers
                               && high page comp rate requires removing unnecessary workers
         */
-        if( page_comp_rate > 1.2 * target && n_wrkrs > 1 ){
+        if( page_op_rate > ((double)1.2 * target) && n_wrkrs > 1 ){
             /* reclaim last spawned wrker*/
-            // pWrkrs[n_wrkrs--].join();
+            pWrkrs[n_wrkrs--].join();
             {
                 std::lock_guard<std::mutex> guard(io_mutex);
-                LOG_PRINTF("global_monitor_reclaim new_num_threads:%d/%u total_page_comps_per_min:%f", n_wrkrs, num_threads, page_comp_rate);
+                LOG_PRINTF("MONITOR_RECLAIM new_num_threads:%d/%u total_page_comps_per_min:%f", n_wrkrs, num_threads, page_op_rate);
+            }
+
+            /* reset counters to check for new rates on next iteration*/           
+            last_seen = 0;
+            {
+                std::lock_guard<std::mutex> guard(page_comp_mutex);
+                page_comps = 0;
             }
         }
-        if( page_comp_rate < 1.5 * target && n_wrkrs < num_threads && cur_page_comps > 0){
+        if( page_op_rate < 1.5 * target && n_wrkrs < num_threads && cur_page_ops > 0){
             {
                 std::lock_guard<std::mutex> guard(io_mutex);
-                LOG_PRINTF("global_monitor_spawn new_num_threads:%d/%u total_page_comps_per_min:%f", n_wrkrs, num_threads, page_comp_rate);
+                LOG_PRINTF("MONITOR_SPAWN new_num_threads:%d/%u total_page_comps_per_min:%f", n_wrkrs+1, num_threads, page_op_rate);
             }
 
             /* spawn thread to attempt recouping lossed page_ops */
+            pWrkrs[n_wrkrs] = std::thread(page_worker, params, desc, level, inbuf, insize, compbuf, comprsize, decomp, n_wrkrs+1);
             n_wrkrs++;
-            pWrkrs[n_wrkrs] = std::thread(page_worker, params, desc, level, inbuf, insize, compbuf, comprsize, decomp, n_wrkrs);
-            {
-                std::lock_guard<std::mutex> guard(io_mutex);
-                LOG_PRINTF("global_monitor_spawned threads:%u ", n_wrkrs);
-            }
-            pWrkrs[n_wrkrs].detach();
-            
 
             /* reset counters to check for new rates on next iteration*/           
             last_seen = 0;
@@ -721,23 +722,8 @@ void page_comp_monitor(double target, lzbench_params_t* params, const compressor
             }
             
         }
-
         usleep(window);
     }
-
-
-    
-    // /* check if another thread is required */
-    // if(compressions < c_tgt){
-    //     /*spawn another page_worker*/
-    //     uint16_t n_pw_id = 
-    //     std::lock_guard<std::mutex> lock(page_comp_mutex);
-    //     std::lock_guard<std::mutex> iolock(iomutex);
-    //     LZBENCH_PRINT( 4, "Page Worker algorithm:%s level:%d page_prom_rate(pages/min):%d page_compression_delay:%dus total_wss:%ld \n");
-    //     page_worker(params, &comp_desc[i], atoi(cparams[1].c_str()), inbuf, insize, compbuf, comprsize, decomp, 0);
-    // }
-    // /* update last seen */
-    // last_seen = cur_page_comps;
 }
 
 void page_workload_with_params(lzbench_params_t* params, const char *cname, uint8_t *inbuf, size_t insize, uint8_t *compbuf, size_t comprsize, uint8_t *decomp){
@@ -761,13 +747,12 @@ void page_workload_with_params(lzbench_params_t* params, const char *cname, uint
             found = true;
 
             /*spawn initial pageworker*/
-            pWrkrs[0] = std::thread(page_worker, params, &comp_desc[i], atoi(cparams[1].c_str()), inbuf, insize, compbuf, comprsize, decomp, 1);
+            pWrkrs[n_wrkrs] = std::thread(page_worker, params, &comp_desc[i], atoi(cparams[1].c_str()), inbuf, insize, compbuf, comprsize, decomp, n_wrkrs+1);
             n_wrkrs++; /*no lock -- increment before startning monitor thread*/
             monTd = std::thread(page_comp_monitor, 2 * params->page_promotion_rate, params, &comp_desc[i], atoi(cparams[1].c_str()), inbuf, insize, compbuf, comprsize, decomp);
-            for (auto& t : pWrkrs) {
-                t.join();
-            }
-            monTd.join();
+            monTd.join();  
+            
+            
         }
     }
     
