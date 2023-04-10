@@ -553,7 +553,7 @@ void page_worker(lzbench_params_t* params, const compressor_desc_t* desc, int le
     }
     {
         std::lock_guard<std::mutex> pLock(io_mutex);
-        LOG_PRINTF("PageWorker_Initialized Core:%d", pw_id);
+        LOG_PRINTF("PAGEWRKR_%d_INIT Core:%d", pw_id, pw_id);
     }
     
 
@@ -569,8 +569,8 @@ void page_worker(lzbench_params_t* params, const compressor_desc_t* desc, int le
         size_t chunk_size = MIN_PAGE_SIZE;
         {
             std::lock_guard<std::mutex> pLock(io_mutex);
-            LOG_PRINTF("PageWorker_Core_%d est_page_comp_per_min:%u page_compression_burst:%u burst_delay(us):%u", 
-                pw_id, cbatch*(60000000/delay_us), cbatch, delay_us);
+            LOG_PRINTF("PAGEWRKR_%d_LOG est_page_rdwr_per_min:%u rdwr_burstsz:%u burst_delay(us):%u", 
+                pw_id, 2*cbatch*(60000000/delay_us), cbatch, delay_us);
         }
 
         if (desc->max_block_size != 0 && chunk_size > desc->max_block_size){
@@ -654,8 +654,8 @@ void page_comp_monitor(double target, lzbench_params_t* params, const compressor
         std::cerr << "Error calling pthread_setaffinity_np: " << rc << "\n";
     }
     
-    LOG_PRINTF("MONITOR_INIT algorithm:%s level:%d target_page_prom_rate(pages/min):%d target_page_reads_writes:%f \n", 
-            desc->name, level, params->page_promotion_rate, target );
+    LOG_PRINTF("MONITOR_INIT algorithm:%s level:%d target_page_rdwr_per_min:%f \n", 
+            desc->name, level, target );
     /* 
      * read page_comp var and compare with page_comps seen a min. ago
      * insufficient page compressions for N intervals results in another
@@ -680,7 +680,7 @@ void page_comp_monitor(double target, lzbench_params_t* params, const compressor
         page_op_rate = (((double) cur_page_ops - last_seen) )*(min_us/window);
         {
             std::lock_guard<std::mutex> guard(io_mutex);
-            LOG_PRINTF("MONITOR_LOG page_reads_writes_per_min:%f cur_num_tds:%u cur_page_ops:%u", page_op_rate, n_wrkrs, cur_page_ops);
+            LOG_PRINTF("MONITOR_LOG pg_rdwr_per_min:%f cur_num_tds:%u tot_pg_rdwr:%u", page_op_rate, n_wrkrs, cur_page_ops);
         }
         last_seen = cur_page_ops;
 
@@ -689,12 +689,19 @@ void page_comp_monitor(double target, lzbench_params_t* params, const compressor
         Number of workers > 1 -> low page comp rate requires spawning additional workers
                               && high page comp rate requires removing unnecessary workers
         */
-        if( page_op_rate > ((double)1.2 * target) && n_wrkrs > 1 ){
+        if( page_op_rate > (target) && n_wrkrs > 1 ){
             /* reclaim last spawned wrker*/
-            pWrkrs[n_wrkrs--].join();
             {
                 std::lock_guard<std::mutex> guard(io_mutex);
-                LOG_PRINTF("MONITOR_RECLAIM new_num_threads:%d/%u total_page_comps_per_min:%f", n_wrkrs, num_threads, page_op_rate);
+                LOG_PRINTF("MONITOR_RECLAIM new_num_tds:%d/%u pg_rdwr_per_min:%f", n_wrkrs, num_threads, page_op_rate);
+            }
+            if (pWrkrs[n_wrkrs-1].joinable())
+            {
+                LOG_PRINTF("Joining td:%d", n_wrkrs-1);
+                // pthread_kill(pWrkrs[n_wrkrs-1].native_handle(), 9);
+                pthread_cancel(pWrkrs[n_wrkrs-1].native_handle()); /* TODO: Implement better cancellation policy -- see pthread_setcancelstate,pthread_cleanup_push,pthread_cleanup_pop*/
+                pWrkrs[n_wrkrs-1].join();
+                n_wrkrs--;
             }
 
             /* reset counters to check for new rates on next iteration*/           
@@ -707,7 +714,7 @@ void page_comp_monitor(double target, lzbench_params_t* params, const compressor
         if( page_op_rate < 1.5 * target && n_wrkrs < num_threads && cur_page_ops > 0){
             {
                 std::lock_guard<std::mutex> guard(io_mutex);
-                LOG_PRINTF("MONITOR_SPAWN new_num_threads:%d/%u total_page_comps_per_min:%f", n_wrkrs+1, num_threads, page_op_rate);
+                LOG_PRINTF("MONITOR_SPAWN new_num_tds:%d/%u pg_rdwr_per_min:%f", n_wrkrs+1, num_threads, page_op_rate);
             }
 
             /* spawn thread to attempt recouping lossed page_ops */
