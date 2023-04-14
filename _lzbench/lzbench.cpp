@@ -1260,7 +1260,7 @@ int main( int argc, char** argv)
         extendedFileList = UTIL_createFileList(inFileNames, ifnIdx, &fileNamesBuf, &fileNamesNb);
         if (extendedFileList) {
             unsigned u;
-            for (u=0; u<fileNamesNb; u++) LZBENCH_PRINT(5, "%u %s\n", u, extendedFileList[u]);
+            /*for (u=0; u<fileNamesNb; u++) LZBENCH_PRINT(5, "%u %s\n", u, extendedFileList[u]);*/
             free((void*)inFileNames);
             inFileNames = extendedFileList;
             ifnIdx = fileNamesNb;
