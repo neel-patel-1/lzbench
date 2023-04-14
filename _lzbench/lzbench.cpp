@@ -564,8 +564,9 @@ void page_worker(lzbench_params_t* params, const compressor_desc_t* desc, int le
         } while (1);
     }
     else{
-        uint32_t delay_us = (60000); /* usleep < 60 milliseconds is sometimes inaccurate */
+        uint32_t delay_us = (6000); /* usleep < 60 milliseconds is sometimes inaccurate */
         uint32_t cbatch = (prom_rate / ((60 * 1000000) / (delay_us))) * 1.3; /* burst of page compressions -- exceed target for performance impact detection*/
+		uint32_t target = 2*cbatch*(60000000/delay_us);
         size_t chunk_size = MIN_PAGE_SIZE;
         {
             std::lock_guard<std::mutex> pLock(io_mutex);
@@ -631,7 +632,6 @@ void page_worker(lzbench_params_t* params, const compressor_desc_t* desc, int le
                 std::lock_guard<std::mutex> pLock(page_comp_mutex);
                 page_comps+= cur_batch;
             }
-            usleep(delay_us);
 
             
         } while (1);
