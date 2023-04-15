@@ -564,19 +564,10 @@ void page_worker(lzbench_params_t* params, const compressor_desc_t* desc, int le
         } while (1);
     }
     else{
-        uint32_t delay_us = (6000); /* usleep < 60 milliseconds is sometimes inaccurate */
-        uint32_t cbatch = (prom_rate / ((60 * 1000000) / (delay_us))) * 1.3; /* burst of page compressions -- exceed target for performance impact detection*/
-		uint32_t target = 2*cbatch*(60000000/delay_us);
         size_t chunk_size = MIN_PAGE_SIZE;
-        {
-            std::lock_guard<std::mutex> pLock(io_mutex);
-            LOG_PRINTF("PAGEWRKR_%d_LOG est_page_rdwr_per_min:%u rdwr_burstsz:%u burst_delay(us):%u", 
-                pw_id, 2*cbatch*(60000000/delay_us), cbatch, delay_us);
-        }
 
         if (desc->max_block_size != 0 && chunk_size > desc->max_block_size){
             chunk_size = desc->max_block_size;
-            delay_us /= (MIN_PAGE_SIZE/chunk_size);
         } 
         char* workmem = NULL;
         size_t param1=level, param2 = desc->additional_param;
@@ -605,36 +596,45 @@ void page_worker(lzbench_params_t* params, const compressor_desc_t* desc, int le
         int d_offIdx = static_cast<int>(comp_distrib(generator)); /* standard uniform random index into compressed pages*/
 
                
+		uint32_t target = prom_rate;
         int comps, decomps, cur_batch;
-        do{
-            comps = 0;
-            decomps = 0;
-            cur_batch = 0;
-            do{
-                /* compress random page in range (inbuf, (inbuf + chunksize)) */
-                c_offset = static_cast<int>(uncomp_distrib(generator)); /* standard uniform random index into uncompressed region*/
-                uint8_t *u_page = inbuf + c_offset;
-                lzbench_compress(params, chunk_sizes, desc->compress, compr_sizes, u_page, compbuf+c_offset, MIN_PAGE_SIZE, param1, param2, workmem);
-                comps++;
-                
-                /* 
-                 * Decompress random page in compressed region into a random offset of the large decompression buffer passed in
-                 * The same offset used for indexing into the large compressed buffer works
-                 */
-                d_idx = comp_distrib(generator);
-                uint8_t *c_page = cbufs[d_idx];
-                lzbench_decompress(params, chunk_sizes, desc->decompress, compr_sizes, c_page, decomp+(c_offset), param1, param2, workmem);
-                decomps++;
-                cur_batch += 2;
-            } while (cur_batch < cbatch); /* do a batch of page compressions*/
-            
-            {
-                std::lock_guard<std::mutex> pLock(page_comp_mutex);
-                page_comps+= cur_batch;
-            }
+		do{
+			using namespace std::chrono;
+			duration<int,std::ratio<1> > c_interval (9); /* int for storage, ratio for duration of periods , arg = num periods */
+			auto finish = system_clock::now() + c_interval;
+			cur_batch = 0;
+			do{
+				comps = 0;
+				decomps = 0;
+				do{
+					/* compress random page in range (inbuf, (inbuf + chunksize)) */
+					c_offset = static_cast<int>(uncomp_distrib(generator)); /* standard uniform random index into uncompressed region*/
+					uint8_t *u_page = inbuf + c_offset;
+					lzbench_compress(params, chunk_sizes, desc->compress, compr_sizes, u_page, compbuf+c_offset, MIN_PAGE_SIZE, param1, param2, workmem);
+					comps++;
+					
+					/* 
+					 * Decompress random page in compressed region into a random offset of the large decompression buffer passed in
+					 * The same offset used for indexing into the large compressed buffer works
+					 */
+					d_idx = comp_distrib(generator);
+					uint8_t *c_page = cbufs[d_idx];
+					lzbench_decompress(params, chunk_sizes, desc->decompress, compr_sizes, c_page, decomp+(c_offset), param1, param2, workmem);
+					decomps++;
+					cur_batch += 2;
+				} while (cur_batch < 1000000); /* do a batch of page compressions*/
+				
+				{
+					std::lock_guard<std::mutex> pLock(page_comp_mutex);
+					page_comps+= cur_batch;
+				}
 
-            
-        } while (1);
+				
+			} while (system_clock::now() < finish);
+			auto dur = std::chrono::duration_cast<std::chrono::milliseconds>(system_clock::now() - finish - c_interval).count();
+			LOG_PRINTF("PAGEWRKR_%d_Batch_Perf page_ops:%d duration(ms):%ld", pw_id, cur_batch, dur);
+
+		}while (1);
 
 done:
         if (desc->deinit) 
@@ -661,7 +661,7 @@ void page_comp_monitor(double target, lzbench_params_t* params, const compressor
      * insufficient page compressions for N intervals results in another
      * page worker spawning
      */
-    uint32_t window = 6000000; // us
+    uint32_t window = 10000000; // us
     uint32_t min_us = 60000000; // 60 s
 
     uint32_t last_seen=0;
