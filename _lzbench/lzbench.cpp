@@ -718,7 +718,7 @@ void page_comp_monitor(double target, lzbench_params_t* params, const compressor
             }
 
             /* spawn thread to attempt recouping lossed page_ops */
-            pWrkrs[n_wrkrs] = std::thread(page_worker, params, desc, level, inbuf, insize, compbuf, comprsize, decomp, n_wrkrs+1);
+            pWrkrs[n_wrkrs] = std::thread(page_worker, params, desc, level, inbuf, insize, compbuf, comprsize, decomp, n_wrkrs);
             n_wrkrs++;
 
             /* reset counters to check for new rates on next iteration*/           
@@ -754,7 +754,7 @@ void page_workload_with_params(lzbench_params_t* params, const char *cname, uint
             found = true;
 
             /*spawn initial pageworker*/
-            pWrkrs[n_wrkrs] = std::thread(page_worker, params, &comp_desc[i], atoi(cparams[1].c_str()), inbuf, insize, compbuf, comprsize, decomp, n_wrkrs+1);
+            pWrkrs[n_wrkrs] = std::thread(page_worker, params, &comp_desc[i], atoi(cparams[1].c_str()), inbuf, insize, compbuf, comprsize, decomp, n_wrkrs);
             n_wrkrs++; /*no lock -- increment before startning monitor thread*/
             monTd = std::thread(page_comp_monitor, 2 * params->page_promotion_rate, params, &comp_desc[i], atoi(cparams[1].c_str()), inbuf, insize, compbuf, comprsize, decomp);
             monTd.join();  
