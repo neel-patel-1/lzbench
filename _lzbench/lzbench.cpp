@@ -596,11 +596,11 @@ void page_worker(lzbench_params_t* params, const compressor_desc_t* desc, int le
         int d_offIdx = static_cast<int>(comp_distrib(generator)); /* standard uniform random index into compressed pages*/
 
                
+		std::chrono::duration<unsigned long, std::ratio<1,1000>> c_interval(1000); /* int for storage, ratio for duration of periods , arg = num periods */
 		uint32_t target = prom_rate;
         int comps, decomps, cur_batch;
 		do{
 			using namespace std::chrono;
-			duration<int,std::ratio<1> > c_interval (9); /* int for storage, ratio for duration of periods , arg = num periods */
 			auto finish = system_clock::now() + c_interval;
 			cur_batch = 0;
 			do{
@@ -689,29 +689,7 @@ void page_comp_monitor(double target, lzbench_params_t* params, const compressor
         Number of workers > 1 -> low page comp rate requires spawning additional workers
                               && high page comp rate requires removing unnecessary workers
         */
-        if( page_op_rate > (target) && n_wrkrs > 1 ){
-            /* reclaim last spawned wrker*/
-            {
-                std::lock_guard<std::mutex> guard(io_mutex);
-                LOG_PRINTF("MONITOR_RECLAIM new_num_tds:%d/%u pg_rdwr_per_min:%f", n_wrkrs, num_threads, page_op_rate);
-            }
-            if (pWrkrs[n_wrkrs-1].joinable())
-            {
-                LOG_PRINTF("Joining td:%d", n_wrkrs-1);
-                // pthread_kill(pWrkrs[n_wrkrs-1].native_handle(), 9);
-                pthread_cancel(pWrkrs[n_wrkrs-1].native_handle()); /* TODO: Implement better cancellation policy -- see pthread_setcancelstate,pthread_cleanup_push,pthread_cleanup_pop*/
-                pWrkrs[n_wrkrs-1].join();
-                n_wrkrs--;
-            }
-
-            /* reset counters to check for new rates on next iteration*/           
-            last_seen = 0;
-            {
-                std::lock_guard<std::mutex> guard(page_comp_mutex);
-                page_comps = 0;
-            }
-        }
-        if( page_op_rate < 1.5 * target && n_wrkrs < num_threads && cur_page_ops > 0){
+        if(  n_wrkrs < num_threads ){
             {
                 std::lock_guard<std::mutex> guard(io_mutex);
                 LOG_PRINTF("MONITOR_SPAWN new_num_tds:%d/%u pg_rdwr_per_min:%f", n_wrkrs+1, num_threads, page_op_rate);
