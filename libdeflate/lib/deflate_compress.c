@@ -30,6 +30,8 @@
 #include "unaligned.h"
 
 #include "libdeflate.h"
+#include <sys/time.h>
+#include <stdio.h>
 
 /******************************************************************************/
 
@@ -3760,8 +3762,16 @@ libdeflate_deflate_compress(struct libdeflate_compressor *c,
 		deflate_write_uncompressed_block(&os, in, in_nbytes, true);
 		return deflate_flush_output(&os);
 	}
-
-	return (*c->impl)(c, in, in_nbytes, out, out_nbytes_avail);
+	struct timeval st, end;
+    unsigned long long st_usec=0, end_usec=0, diff;
+    (void)gettimeofday(&(st), NULL);
+	uint64_t ret = (*c->impl)(c, in, in_nbytes, out, out_nbytes_avail);
+	(void)gettimeofday(&(end), NULL);
+    st_usec = (st.tv_sec * 1000000) + st.tv_usec;
+    end_usec = (end.tv_sec * 1000000) + end.tv_usec;
+    diff = end_usec - st_usec;
+    printf("LIBDEFLATE_COMP: Size: %ld usec: %lld\n", in_nbytes, diff);
+	return ret;
 }
 
 LIBDEFLATEEXPORT void LIBDEFLATEAPI
