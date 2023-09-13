@@ -928,18 +928,10 @@ dispatch(struct libdeflate_decompressor * restrict d,
 		f = DEFAULT_IMPL;
 
 	decompress_impl = f;
-	struct timeval st, end;
-    unsigned long long st_usec=0, end_usec=0, diff;
-    (void)gettimeofday(&(st), NULL);
-	uint64_t ret = (*f)(d, in, in_nbytes, out, out_nbytes_avail,
-		    actual_in_nbytes_ret, actual_out_nbytes_ret);
-	(void)gettimeofday(&(end), NULL);
-    st_usec = (st.tv_sec * 1000000) + st.tv_usec;
-    end_usec = (end.tv_sec * 1000000) + end.tv_usec;
-    diff = end_usec - st_usec;
-    printf("LIBDEFLATE_DECOMP: Size: %ld usec: %lld\n", in_nbytes, diff);
-	return ret;
 	
+	return (*f)(d, in, in_nbytes, out, out_nbytes_avail,
+		    actual_in_nbytes_ret, actual_out_nbytes_ret);
+		
 }
 #else
 #  define decompress_impl DEFAULT_IMPL /* only one implementation, use it */
@@ -961,8 +953,19 @@ libdeflate_deflate_decompress_ex(struct libdeflate_decompressor * restrict d,
 				 size_t *actual_in_nbytes_ret,
 				 size_t *actual_out_nbytes_ret)
 {
-	return decompress_impl(d, in, in_nbytes, out, out_nbytes_avail,
+	/* Start Timing */
+	struct timeval st, end;
+    unsigned long long st_usec=0, end_usec=0, diff;
+    (void)gettimeofday(&(st), NULL);
+	enum libdeflate_result ret = decompress_impl(d, in, in_nbytes, out, out_nbytes_avail,
 			       actual_in_nbytes_ret, actual_out_nbytes_ret);
+	/* End Timing */
+	(void)gettimeofday(&(end), NULL);
+    st_usec = (st.tv_sec * 1000000) + st.tv_usec;
+    end_usec = (end.tv_sec * 1000000) + end.tv_usec;
+    diff = end_usec - st_usec;
+    printf("LIBDEFLATE_DECOMP: Size: %ld usec: %lld\n", in_nbytes, diff);
+	return ret; 
 }
 
 LIBDEFLATEEXPORT enum libdeflate_result LIBDEFLATEAPI
